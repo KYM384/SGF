@@ -30,12 +30,12 @@ def main(args):
 
     with torch.no_grad():
         w_mean = G.mean_latent(1000)
-        z = torch.randn(1, 512)
+        z = torch.randn(1, 512, device=device)
         w0 = G.style(z)
         w0 += 0.2 * (w_mean - w0)
     
     with torch.no_grad():
-        z = torch.randn(1, 512)
+        z = torch.randn(1, 512, device=device)
         image_t, _ = G([z], truncation=0.8, truncation_latent=w_mean, randomize_noise=False)
         c1 = C(image_t).unsqueeze(0)
 

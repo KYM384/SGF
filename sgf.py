@@ -4,9 +4,11 @@ import torchvision
 
 
 def translate(G, C, F, z0, c1, m=1, max_iteration=100, step=0.2):
+    device = z0.device
+
     with torch.no_grad():
         image, _ = G([z0], input_is_latent=True, randomize_noise=False)
-        c0 = C(image).unsqueeze(0)
+        c0 = C(image).unsqueeze(0).to(device)
 
         d_c = step * (c1 - c0)
 
@@ -37,7 +39,7 @@ def translate(G, C, F, z0, c1, m=1, max_iteration=100, step=0.2):
             z += d_z
             image, _ = G([z], input_is_latent=True, randomize_noise=False)
             
-            c = C(image).unsqueeze(0)
+            c = C(image).unsqueeze(0).to(device)
 
             c_diff_new = (c-c1).pow(2).mean()
             
