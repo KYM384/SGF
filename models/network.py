@@ -6,7 +6,7 @@ import torch
 def AdaIN(x, c):
     m_x = torch.mean(x, 1, keepdim=True)
     s_x = torch.std(x, 1, keepdim=True)
-    x_norm = (x - m_x) / s_x
+    x_norm = (x - m_x) / (s_x + 1e-5)
     m_c = torch.mean(c, 1, keepdim=True)
     s_c = torch.std(c, 1, keepdim=True)
     return x_norm * s_c + m_c

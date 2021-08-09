@@ -7,7 +7,7 @@ import os
 
 from models.network import AuxiliaryMappingNetwork
 from models.stylegan2.model import Generator
-from models.classifer import Classifier
+from models.classifier import Classifier
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -18,7 +18,7 @@ def main(args):
     G.to(device).eval()
     mean_latent = G.mean_latent(5000)
 
-    C = Classifier(args.detector_ckpt)
+    C = Classifier(args.detector_ckpt, args.classifier_ckpt, args.parsing_ckpt)
 
     F = AuxiliaryMappingNetwork(args.n_layer, C.c_dim)
     F.load_state_dict(torch.load(args.ckpt, map_location="cpu"))
@@ -38,7 +38,7 @@ def main(args):
     c = c.unsqueeze(0).to(device)
     w_hat = F(w, c)
 
-    print((w-w_hat).pow(2).mean())
+    print((w-w_hat).pow(2).mean().item())
 
     rec_image, _ = G([w_hat], input_is_latent=True)
 
@@ -54,6 +54,10 @@ if __name__ == "__main__":
                                             help="weights of mapping network")
     parse.add_argument("--detector_ckpt", type=str, default="checkpoints/shape_predictor_68_face_landmarks.dat",
                                             help="weights of keypoints detector")
+    parse.add_argument("--classifier_ckpt", type=str, default="checkpoints/attributes_classifier.pt",
+                                            help="weights of classifier")
+    parse.add_argument("--parsing_ckpt", type=str, default="checkpoints/parsing.pt",
+                                            help="weights of parsing model")
     parse.add_argument("--size", type=int, default=256,
                                             help="size of generated images")
     parse.add_argument("--g_ckpt", type=str, default="checkpoints/sg2_256_ffhq.pt",

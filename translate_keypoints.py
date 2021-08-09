@@ -11,7 +11,7 @@ import os
 from models.network import AuxiliaryMappingNetwork
 from models.stylegan2.model import Generator
 from models.classifier import Classifier
-from sgf import translate
+from sgf import translate, translate_faster
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -22,7 +22,7 @@ def main(args):
     G.load_state_dict(torch.load(args.g_ckpt, map_location="cpu")["g_ema"], strict=False)
     G.to(device).eval()
 
-    C = Classifier(args.detector_ckpt)
+    C = Classifier(args.detector_ckpt, args.classifier_ckpt, args.parsing_ckpt)
 
     F = AuxiliaryMappingNetwork(args.n_layer, C.c_dim)
     F.load_state_dict(torch.load(args.f_ckpt, map_location="cpu"))
@@ -31,15 +31,18 @@ def main(args):
     with torch.no_grad():
         w_mean = G.mean_latent(1000)
         z = torch.randn(1, 512, device=device)
-        w0 = G.style(z)
-        w0 += 0.2 * (w_mean - w0)
-    
-    with torch.no_grad():
+        image_s, w0 = G([z], truncation=0.8, truncation_latent=w_mean, return_latents=True)
+        c0 = C(image_s).unsqueeze(0)
+        w0 = w0[:, 0]
+        
         z = torch.randn(1, 512, device=device)
-        image_t, _ = G([z], truncation=0.8, truncation_latent=w_mean, randomize_noise=False)
+        image_t, w1 = G([z], truncation=0.8, truncation_latent=w_mean, return_latents=True)
         c1 = C(image_t).unsqueeze(0)
+        c1[:, :28] = c0[:, :28]
+        c1[:, -3:] = c0[:, -3:]
 
-    images, _ = translate(G, C, F, w0.to(device), c1.to(device), max_iteration=5, step=0.2)
+
+    images, _ = translate(G, C, F, w0, c1, max_iteration=5)
 
     imgs = torch.cat(images + [image_t], 0)
     torchvision.utils.save_image(imgs, "translate.png", nrow=len(imgs), normalize=True, range=(-1, 1))
@@ -50,7 +53,11 @@ if __name__ == "__main__":
     parse = argparse.ArgumentParser()
 
     parse.add_argument("--detector_ckpt", type=str, default="checkpoints/shape_predictor_68_face_landmarks.dat",
-                        help="pretrained weights of keypoints detector")
+                                            help="weights of keypoints detector")
+    parse.add_argument("--classifier_ckpt", type=str, default="checkpoints/attributes_classifier.pt",
+                                            help="weights of classifier")
+    parse.add_argument("--parsing_ckpt", type=str, default="checkpoints/parsing.pt",
+                                            help="weights of parsing model")
     parse.add_argument("--size", type=int, default=256,
                         help="size of generated images")
     parse.add_argument("--g_ckpt", type=str, default="checkpoints/sg2_256_ffhq.pt",
