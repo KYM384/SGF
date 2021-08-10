@@ -26,8 +26,9 @@ def translate(G, C, F, z0, c1, m=1, max_iteration=5):
         z.requires_grad = True
         c.requires_grad = True
 
-        z_grad = torch.autograd.functional.jacobian(lambda z_:F(z_, c), z)[0,:,0,:]
-        c_grad = torch.autograd.functional.jacobian(lambda c_:F(z, c_), c)[0,:,0,:]
+        grad = torch.autograd.functional.jacobian(F, (z,c))
+        z_grad = grad[0][0,:,0,:]
+        c_grad = grad[1][0,:,0,:]
         
         with torch.no_grad():
             d_z = c_grad @ d_c[0]
@@ -45,11 +46,11 @@ def translate(G, C, F, z0, c1, m=1, max_iteration=5):
             c_diff_new = (c-c1).pow(2).mean()
             
             print(c_diff_new)
-            images.append(image)
 
             if c_diff > 0 and c_diff < c_diff_new:
                 break
 
+            images.append(image)
             c_diff = c_diff_new
 
     return images, z
@@ -58,6 +59,8 @@ def translate(G, C, F, z0, c1, m=1, max_iteration=5):
 def translate_faster(G, C, F, z0, c1, m=1, max_iteration=5):
     device = z0.device
     step = 1.0 / max_iteration
+
+    from tqdm import tqdm
 
     with torch.no_grad():
         image, _ = G([z0], input_is_latent=True, randomize_noise=False)
@@ -72,14 +75,15 @@ def translate_faster(G, C, F, z0, c1, m=1, max_iteration=5):
 
     z = z0
     c = c0
-    c_diff = -1
 
-    for i in range(max_iteration):
-        z.requires_grad = True
-        c.requires_grad = True
+    z.requires_grad = True
+    c.requires_grad = True
 
-        z_grad = torch.autograd.functional.jacobian(lambda z_:F(z_, c), z)[0,:,0,:]
-        c_grad = torch.autograd.functional.jacobian(lambda c_:F(z, c_), c)[0,:,0,:]
+
+    for i in tqdm(range(max_iteration)):
+        grad = torch.autograd.functional.jacobian(F, (z,c))
+        z_grad = grad[0][0,:,0,:]
+        c_grad = grad[1][0,:,0,:]
         
         with torch.no_grad():
             d_z = c_grad @ d_c[0]
