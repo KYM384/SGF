@@ -17,8 +17,8 @@ def main(args):
     mean_latent = G.mean_latent(5000)
 
     os.makedirs(args.data_dir, exist_ok=True)
-    os.makedirs(os.path.join(args.data_dir, "latents"), exist_ok=True)
     os.makedirs(os.path.join(args.data_dir, "images"), exist_ok=True)
+    latents = []
 
     p_bar = tqdm(total=args.n_sample)
 
@@ -28,12 +28,16 @@ def main(args):
             image, w = G([z], return_latents=True, truncation=args.truncation, truncation_latent=mean_latent)
             w = w[:, 0, :]
 
+        latents.append(w)
+
         for j in range(args.batch):
-            torch.save(w[j], os.path.join(args.data_dir, "latents", f"{i*args.batch+j:06}.pt"))
             torchvision.utils.save_image(image[j:j+1], 
                     os.path.join(args.data_dir, "images", f"{i*args.batch+j:06}.png"), normalize=True, range=(-1, 1))
 
         p_bar.update(args.batch)
+
+    latents = torch.cat(latents)
+    torch.save(latents, os.path.join(args.data_dir, "latents.pt"))
 
 
 if __name__ == "__main__":

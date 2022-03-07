@@ -23,7 +23,8 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(self, base_dir, C):
         super().__init__()
         self.base_dir = base_dir
-        self.paths = os.listdir(os.path.join(base_dir, "images"))
+        self.paths = sorted(os.listdir(os.path.join(base_dir, "images")))
+        self.latents = torch.load(os.path.join(base_dir, "latents.pt"))
 
         self.C = C
         self.transforms = torchvision.transforms.Compose([
@@ -36,18 +37,17 @@ class Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         path = self.paths[index]
-        img = Image.open(os.path.join(self.base_dir, "images", path))
-        w = torch.load(os.path.join(self.base_dir, "latents", path.replace(".png", ".pt")))
+        w = self.latents[index:index+1]
         try:
             return w, self.C(self.transforms(img).unsqueeze(0).to(device))
         except:
-            return self.__getitem__(np.random.randint(0, self.__len__()-1))
+            return self.__getitem__(np.random.randint(0, self.__len__()))
 
 
 def train(args):
     writer = SummaryWriter("logs")
 
-    C = Classifier(args.detector_ckpt, args.classifier_ckpt, args.parsing_ckpt)
+    C = Classifier(args.detector_ckpt, args.classifier_ckpt)
 
     F = AuxiliaryMappingNetwork(args.n_layer, C.c_dim)
     F.to(device)
@@ -108,8 +108,6 @@ if __name__ == "__main__":
                                             help="weights of keypoints detector")
     parse.add_argument("--classifier_ckpt", type=str, default="checkpoints/attributes_classifier.pt",
                                             help="weights of classifier")
-    parse.add_argument("--parsing_ckpt", type=str, default="checkpoints/parsing.pt",
-                                            help="weights of parsing model")
 
     args = parse.parse_args()
 
