@@ -13,43 +13,45 @@ import argparse
 import os
 
 from models.network import AuxiliaryMappingNetwork
-from models.classifier import Classifier
+from models.stylegan2.model import Generator
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, base_dir, C):
+    def __init__(self, data_dir):
         super().__init__()
-        self.base_dir = base_dir
-        self.paths = sorted(os.listdir(os.path.join(base_dir, "images")))
-        self.latents = torch.load(os.path.join(base_dir, "latents.pt"))
-
-        self.C = C
-        self.transforms = torchvision.transforms.Compose([
-                                torchvision.transforms.ToTensor(),
-                                torchvision.transforms.Normalize(0.5, 0.5)
-                            ])
+        self.data_dir = data_dir
+        self.paths = sorted(os.listdir(data_dir))
 
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, index):
         path = self.paths[index]
-        w = self.latents[index:index+1]
-        try:
-            return w, self.C(self.transforms(img).unsqueeze(0).to(device))
-        except:
-            return self.__getitem__(np.random.randint(0, self.__len__()))
+        c = torch.load(os.path.join(self.data_dir, path))
+
+        seed = int(os.path.splitext(path)[0])
+        torch.cuda.manual_seed(seed)
+        z = torch.randn(1, 512, device=device)
+
+        return z, c
+
 
 
 def train(args):
     writer = SummaryWriter("logs")
 
-    C = Classifier(args.detector_ckpt, args.classifier_ckpt)
+    G = Generator(args.size, 512, 8)
+    G.load_state_dict(torch.load(args.g_ckpt)["g_ema"])
+    G.to(device).eval()
 
-    F = AuxiliaryMappingNetwork(args.n_layer, C.c_dim)
+    torch.cuda.manual_seed(0)
+    mean_latent = G.mean_latent(5000)
+
+
+    F = AuxiliaryMappingNetwork(args.n_layer, args.c_dim)
     F.to(device)
     F.train()
 
@@ -58,7 +60,7 @@ def train(args):
 
     opt = optim.Adam(F.parameters(), lr=0.0002)
 
-    dataset = Dataset(args.data_dir, C)
+    dataset = Dataset(args.data_dir)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch, shuffle=True)
 
     total_bar = tqdm(total = args.total_iter)
@@ -67,9 +69,11 @@ def train(args):
 
     for i in range(total_epoch + 1):
         l_epoch = []
-        for w, c in dataloader:
-            w = w.to(device)
+        for z, c in dataloader:
             c = c.to(device)
+            with torch.no_grad():
+                w = G.style(z)
+                w -= (1 - args.truncation) * (mean_latent - w)
 
             w_hat = F(w, c)
 
@@ -95,19 +99,15 @@ def train(args):
 if __name__ == "__main__":
     parse = argparse.ArgumentParser()
 
-    parse.add_argument("--total_iter", type=int, default=500000,
-                                            help="total iterations")
-    parse.add_argument("--data_dir", type=str, default="data",
-                                            help="dataset directory")
-    parse.add_argument("--batch", type=int, default=8,
-                                            help="batch size")
-    parse.add_argument("--n_layer", type=int, default=15,
-                                            help="number of mapping network layers")
+    parse.add_argument("--total_iter", type=int, default=500000, help="total iterations")
+    parse.add_argument("--data_dir", type=str, default="data", help="dataset directory")
+    parse.add_argument("--batch", type=int, default=8, help="batch size")
+    parse.add_argument("--n_layer", type=int, default=15, help="number of mapping network layers")
 
-    parse.add_argument("--detector_ckpt", type=str, default="checkpoints/shape_predictor_68_face_landmarks.dat",
-                                            help="weights of keypoints detector")
-    parse.add_argument("--classifier_ckpt", type=str, default="checkpoints/attributes_classifier.pt",
-                                            help="weights of classifier")
+    parse.add_argument("--c_dim", type=int, default=515, help="conditional vector length")
+    parse.add_argument("--size", type=int, default=1024, help="size of generate")
+    parse.add_argument("--g_ckpt", type=str, default="checkpoints/sg2_1024_ffhq.pt", help="pretrained weights of generator")
+    parse.add_argument("--truncation", type=float, default=0.8, help="truncation value")
 
     args = parse.parse_args()
 
