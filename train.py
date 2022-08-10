@@ -70,7 +70,7 @@ def train(args):
     for i in range(total_epoch + 1):
         l_epoch = []
         for z, c in dataloader:
-            if i > args.total_iter:
+            if iter_ > args.total_iter:
                 break
 
             c = c.to(device)
